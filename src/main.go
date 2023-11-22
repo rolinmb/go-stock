@@ -279,7 +279,7 @@ func main() {
   }
   normalizeFeatures(trainingIn)
   // Training Loop
-  for epoch := 0; epoch < 10000; epoch++ {
+  for epoch := 0; epoch < 100; epoch++ {
     for i := range trainingIn {
       nn.Train(trainingIn[i], trainingTargets[i], .0001)
     }
