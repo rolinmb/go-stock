@@ -149,7 +149,6 @@ func (nn *NeuralNetwork) Predict(inputs []float64) []float64 {
     for j := 0; j < nn.hiddenNodes; j++ {
       outputs[i] += hiddenInputs[j] * nn.weightsHiddenOut[j][i]
     }
-    outputs[i] = sigmoid(outputs[i])
   }
   return outputs
 }
@@ -224,7 +223,7 @@ func main() {
     fmt.Println("AV API Request Limit Exceeded or some other error")
     //return
   }
-  fmt.Println("Information:", tSeries.MetaData.Information)
+  fmt.Println("\n[AV TIME SERIES API METADATA]\n\nInformation:", tSeries.MetaData.Information)
   fmt.Println("Symbol:", tSeries.MetaData.Symbol)
   fmt.Println("Last Refreshed:", tSeries.MetaData.LastRefreshed)
   fmt.Println("Output Size:", tSeries.MetaData.OutputSize)
@@ -249,43 +248,9 @@ func main() {
   var trainingTargets [][]float64
   var mins, maxs []float64
   // Training Feature Detection
-  for i, date := range dates {
-    if i > 0 {
-      data := tSeries.TimeSeries[date]
-      closePrc, _ := strconv.ParseFloat(data.Close, 64)
-      prevData := tSeries.TimeSeries[dates[i-1]]
-      prevClose, _ := strconv.ParseFloat(prevData.Close, 64)
-      prevOpen, _ := strconv.ParseFloat(prevData.Open, 64)
-      prevHigh, _ := strconv.ParseFloat(prevData.High, 64)
-      prevLow, _ := strconv.ParseFloat(prevData.Low, 64)
-      prevRange := prevHigh - prevLow
-      prevReturn := (prevClose - prevOpen) / prevOpen * 100
-      trainingIn = append(trainingIn, []float64{prevClose, prevRange, prevReturn})
-      trainingTargets = append(trainingTargets, []float64{closePrc})
-      if i == 1 {
-        mins = append(mins, prevClose, prevRange, prevReturn)
-	      maxs = append(maxs, prevClose, prevRange, prevReturn)
-      } else {
-        for j, val := range []float64{prevClose, prevRange, prevReturn} {
-          if val < mins[j] {
-            mins[j] = val
-          }
-	        if val > maxs[j] {
-            maxs[j] = val
-	        }
-	      }
-      }
-    }
-  }
-  normalizeFeatures(trainingIn)
-  // Training Loop
-  for epoch := 0; epoch < 100; epoch++ {
-    for i := range trainingIn {
-      nn.Train(trainingIn[i], trainingTargets[i], .0001)
-    }
-  }
-  // Post-Training Predictions
-  for i := len(trainingIn); i < len(dates); i++ {
+  for i := 1; i < len(dates); i++ {
+    data := tSeries.TimeSeries[dates[i]]
+    closePrc, _ := strconv.ParseFloat(data.Close, 64)
     prevData := tSeries.TimeSeries[dates[i-1]]
     prevClose, _ := strconv.ParseFloat(prevData.Close, 64)
     prevOpen, _ := strconv.ParseFloat(prevData.Open, 64)
@@ -293,10 +258,44 @@ func main() {
     prevLow, _ := strconv.ParseFloat(prevData.Low, 64)
     prevRange := prevHigh - prevLow
     prevReturn := (prevClose - prevOpen) / prevOpen * 100
-    features := []float64{prevClose, prevRange, prevReturn}
-    iterNormalizeFeatures(features, mins, maxs)
-    prediction := nn.Predict(features)
-    predictedClosePrice := prediction[0]
-    fmt.Printf("Date: %s, Predicted Close Price: %f\n", dates[i], predictedClosePrice)
+    trainingIn = append(trainingIn, []float64{prevClose, prevRange, prevReturn})
+    trainingTargets = append(trainingTargets, []float64{closePrc})
+    if i == 1 {
+      mins = append(mins, prevClose, prevRange, prevReturn)
+	    maxs = append(maxs, prevClose, prevRange, prevReturn)
+    } else {
+      for j, val := range []float64{prevClose, prevRange, prevReturn} {
+        if val < mins[j] {
+          mins[j] = val
+        }
+	      if val > maxs[j] {
+          maxs[j] = val
+	      }
+	    }
+    }
   }
+  normalizeFeatures(trainingIn)
+  // Training Loop
+  for epoch := 0; epoch < 200; epoch++ {
+    for i := range trainingIn {
+      nn.Train(trainingIn[i], trainingTargets[i], .001)
+    }
+  }
+  // Post-Training Prediction Test
+  prevData := tSeries.TimeSeries[dates[len(dates)-2]]
+  prevClose, _ := strconv.ParseFloat(prevData.Close, 64)
+  prevOpen, _ := strconv.ParseFloat(prevData.Open, 64)
+  prevHigh, _ := strconv.ParseFloat(prevData.High, 64)
+  prevLow, _ := strconv.ParseFloat(prevData.Low, 64)
+  prevVol, _ := strconv.ParseFloat(prevData.Volume, 64)
+  prevRange := prevHigh - prevLow
+  prevReturn := (prevClose - prevOpen) / prevOpen * 100
+  fmt.Printf("\n[PREDICTION TEST DATA: %s]\n > (O,H,L,C,Volume) = ($%.2f, $%.2f, $%.2f, $%.2f, %.2f)\n > prevRange = $%.2f\n > prevReturn = %.4f%%\n", dates[len(dates)-2], prevOpen, prevHigh, prevLow, prevClose, prevVol, prevRange, prevReturn)
+  predictionTestData := []float64{prevClose, prevRange, prevReturn}
+  iterNormalizeFeatures(predictionTestData, mins, maxs) 
+  prediction := nn.Predict(predictionTestData)
+  fmt.Printf("\n'prediction' struct / object:\n [%v]\n", prediction)
+  predictedClose := prediction[0]
+  targetClose, _ := strconv.ParseFloat(tSeries.TimeSeries[dates[len(dates)-1]].Close, 64)
+  fmt.Printf("\n[PREDICTION TEST RESULT]\n => Predicted Close Price for %s: $%.2f\n => Actual Close Price: $%.2f\n => delta / error = $%f\n", dates[len(dates)-1], predictedClose, targetClose, predictedClose - targetClose)
 }
